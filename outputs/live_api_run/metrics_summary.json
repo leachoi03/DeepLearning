@@ -1,0 +1,18 @@
+{
+  "base_metrics": {
+    "rmse": 9.878880500793457,
+    "mae": 7.621083736419678,
+    "r2": -1.6235854625701904,
+    "spearman": -0.3449249914112303
+  },
+  "correction_metrics": {
+    "rmse": 1.1219979524612427,
+    "mae": 1.0214691162109375,
+    "r2": -4.747868061065674,
+    "spearman": 0.5
+  },
+  "artifacts": {
+    "final_scores_csv": "D:\\subUser\\cgh\\CodexProj\\project\\DL\\outputs\\live_api_run\\final_scores.csv",
+    "heatmap_png": "D:\\subUser\\cgh\\CodexProj\\project\\DL\\outputs\\live_api_run\\final_score_heatmap.png"
+  }
+}

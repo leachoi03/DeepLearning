@@ -1,0 +1,31 @@
+place_id,place_name,grid_id,weight,review_status,mapping_source,place_code,category
+PLACE_001,성신여대입구역,5*0*0*0*,1.0,CODE_MATCHED,rank_based_suggestion,POI035,인구밀집지역
+PLACE_003,홍제폭포,5*0*0*8*,1.0,CODE_MATCHED,rank_based_suggestion,POI128,공원
+PLACE_009,인사동,5*0*3*6*,1.0,CODE_MATCHED,rank_based_suggestion,POI078,발달상권
+PLACE_010,장한평역,5*0*3*8*,1.0,CODE_MATCHED,rank_based_suggestion,POI049,인구밀집지역
+PLACE_015,이태원역,5*0*5*5*,1.0,CODE_MATCHED,rank_based_suggestion,POI047,인구밀집지역
+PLACE_016,혜화역,5*0*8*5*,1.0,CODE_MATCHED,rank_based_suggestion,POI054,인구밀집지역
+PLACE_017,선릉역,5*0*8*6*,1.0,CODE_MATCHED,rank_based_suggestion,POI034,인구밀집지역
+PLACE_018,서울대입구역,5*0*8*7*,1.0,CODE_MATCHED,rank_based_suggestion,POI031,인구밀집지역
+PLACE_021,경복궁,5*0*9*3*,1.0,CODE_MATCHED,rank_based_suggestion,POI008,고궁·문화유산
+PLACE_022,서대문독립공원,5*1*0*3*,1.0,CODE_MATCHED,rank_based_suggestion,POI124,공원
+PLACE_024,신촌·이대역,5*1*0*8*,1.0,CODE_MATCHED,rank_based_suggestion,POI040,인구밀집지역
+PLACE_026,강남역,5*1*1*2*,1.0,CODE_MATCHED,rank_based_suggestion,POI014,인구밀집지역
+PLACE_029,신논현역·논현역,5*1*2*6*,1.0,CODE_MATCHED,rank_based_suggestion,POI037,인구밀집지역
+PLACE_030,가산디지털단지역,5*1*2*8*,1.0,CODE_MATCHED,rank_based_suggestion,POI013,인구밀집지역
+PLACE_032,합정역,5*1*3*4*,1.0,CODE_MATCHED,rank_based_suggestion,POI053,인구밀집지역
+PLACE_034,사당역,5*1*3*9*,1.0,CODE_MATCHED,rank_based_suggestion,POI029,인구밀집지역
+PLACE_037,국립중앙박물관·용산가족공원,5*1*5*3*,1.0,CODE_MATCHED,rank_based_suggestion,POI089,공원
+PLACE_038,오목교역·목동운동장,5*1*5*8*,1.0,CODE_MATCHED,rank_based_suggestion,POI044,인구밀집지역
+PLACE_041,보신각,5*1*6*9*,1.0,CODE_MATCHED,rank_based_suggestion,POI010,고궁·문화유산
+PLACE_042,보라매공원,5*1*7*0*,1.0,CODE_MATCHED,rank_based_suggestion,POI123,공원
+PLACE_045,시의회 앞,5*1*7*7*,1.0,CODE_MATCHED,rank_based_suggestion,POI130,인구밀집지역
+PLACE_046,이태원 관광특구,5*1*7*8*,1.0,CODE_MATCHED,rank_based_suggestion,POI004,관광특구
+PLACE_048,익선동,5*1*8*5*,1.0,CODE_MATCHED,rank_based_suggestion,POI116,발달상권
+PLACE_049,노량진,5*1*8*6*,1.0,CODE_MATCHED,rank_based_suggestion,POI063,발달상권
+PLACE_055,성수카페거리,5*2*0*1*,1.0,CODE_MATCHED,rank_based_suggestion,POI068,발달상권
+PLACE_061,청량리 제기동 일대 전통시장,5*2*0*9*,1.0,CODE_MATCHED,rank_based_suggestion,POI081,발달상권
+PLACE_063,DDP(동대문디자인플라자),5*2*2*7*,1.0,CODE_MATCHED,rank_based_suggestion,POI083,발달상권
+PLACE_074,미아사거리역,5*2*5*1*,1.0,CODE_MATCHED,rank_based_suggestion,POI026,인구밀집지역
+PLACE_077,숭례문,5*2*5*9*,1.0,CODE_MATCHED,rank_based_suggestion,POI131,인구밀집지역
+PLACE_079,잠실종합운동장,5*2*6*4*,1.0,CODE_MATCHED,rank_based_suggestion,POI109,공원

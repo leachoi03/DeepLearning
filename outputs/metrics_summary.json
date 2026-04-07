@@ -1,0 +1,25 @@
+{
+  "base_metrics": {
+    "rmse": 9.878880500793457,
+    "mae": 7.621083736419678,
+    "r2": -1.6235854625701904,
+    "spearman": -0.3449249914112303
+  },
+  "correction_metrics": {
+    "rmse": 1.1219979524612427,
+    "mae": 1.0214691162109375,
+    "r2": -4.747868061065674,
+    "spearman": 0.5
+  },
+  "artifacts": {
+    "final_scores_csv": "./outputs\\final_scores.csv",
+    "heatmap_png": "./outputs\\final_score_heatmap.png"
+  },
+  "final_metrics": {
+    "rmse": 15.698660549143476,
+    "mae": 14.82986038759559,
+    "r2": -7.047593596869536,
+    "spearman": 0.8531468531468532,
+    "precision_at_100": 0.75
+  }
+}
