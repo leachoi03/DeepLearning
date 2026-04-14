@@ -1,0 +1,200 @@
+<시스템 구조>
+
+0. Data
+	data/ = 학습/추론용 csv
+	ouputs/ = 학습 결과와 최종 결과 저장
+
+	data/base_train.csv => 기본 적합도 모델 학습용
+	data/base_infer.csv => 기본 적합도 추론용
+	data/correction_train.csv => 보정 모델 학습용 시계열 데이터
+	data/correction_infer.csv => 보정 모델 추론용 시계열 데이터
+	data/final_actual.csv => 최종 평가용 정답값
+	data/grid_place_mapping.csv => 장소-격자 매핑 테이블
+	outputs/ => 모델, 예측 결과, 요약 결과, 히트맵 저장
+
+1. Pre-Processing
+preprocess_seoul_grid_data.py => 원천 데이터들을 읽어서 모델이 바로 쓸 수 있는 CSV들을 생성
+	최종적으로 아래 csv들을 저장.
+	base_train.csv
+	base_infer.csv
+	correction_train.csv
+	correction_infer.csv
+	final_actual.csv
+	grid_place_mapping.csv
+
+	KT 50m 셀을 공통 공간 단위로 사용
+	유동인구 데이터 => avg_flow, weekday_weekend_gap, hourly_concentration 같은 기본 특성 생성
+	카드 데이터 => 직접 grid 매핑이 없어서 **유동인구 비율(flow share)**로 분배
+	강우량 => 월 단위 요약치로 결합
+	bus_subway_access, rent_level => 원천 데이터가 없어서 **대리 지표(proxy)**로 생성
+	correction_target도 실제 정답이 아니라, 과거 패턴 기반 pseudo-label로 생성
+
+2. Train Step
+seoul_grid_vitality_pipeline.py => 실제 메인 파이프라인입니다. 
+	이 파일은 다음을 수행.
+	Base MLP 학습
+	Correction LSTM 학습
+	base score 추론
+	correction score 추론
+	base score + correction score = final score 계산
+	결과 CSV/JSON/히트맵 저장
+
+	구체적으로 보면:
+		Base 모델
+			입력: grid별 정적 특징
+			모델: MLP
+			출력: base_score
+		Correction 모델
+			입력: grid별 시계열 특징
+			모델: LSTM
+			출력: correction_score	
+		최종 점수
+			final_score = alpha * base_score + beta * correction_score
+			기본값은 alpha=1.0, beta=1.0이라 사실상 두 값을 그냥 더합니다.
+
+3. 실시간 OpenAPI 연결
+실시간 서울 도시데이터 API를 쓸 때 => fetch_seoul_realtime_api_to_csv.py가 동작. 
+이 코드는
+	grid_place_mapping_api_ready.csv 같은 매핑 테이블을 읽음
+	장소별로 OpenAPI를 호출
+	응답을 correction_infer 형식으로 정규화
+	최종적으로 data/correction_infer_live.csv를 생성
+그리고 한 장소가 여러 grid에 연결될 수 있으므로 weight를 곱한 뒤 grid_id, timestamp 기준으로 다시 집계. 
+즉, 장소 단위 실시간 정보를 grid 단위 특징으로 바꾸는 중간 다리 역할.
+
+-------------------------------------------------------------------------------------------------------------------------------
+
+<데이터셋 구성>
+
+1. base_train.csv / base_infer.csv => 기본 적합도 모델용 데이터
+	grid_id
+	장기적으로 해당 grid가 얼마나 활력 있는 상권인지 설명하는 변수들
+		avg_flow						: 해당 grid의 평균 유동인구 규모
+		weekday_weekend_gap				: 평일/주말 차이
+		hourly_concentration				: 특정 시간대 쏠림 정도
+		card_sales_amount, card_sales_count	: 소비 수요 크기
+		rainfall_mean, rainfall_impact			: 비와 상권의 관계
+		bus_subway_access				: 교통 접근성 대리 지표
+		rent_level						: 상권 강도 기반 임대료 대리 지표
+	학습용: base_target
+
+2. correction_train.csv / correction_infer.csv => 실시간 보정 모델용 시계열 데이터
+	grid_id
+	timestamp
+	지금 이 시점에 평소보다 얼마나 더 좋아졌는지/나빠졌는지 설명하는 데이터등
+		real_time_population				: 현재 시점 인구 규모
+		real_time_population_growth			: 직전 대비 증가율
+		traffic_congestion					: 혼잡도
+		transit_change					: 이동량 변화
+		real_time_temp, real_time_rain		: 날씨
+		event_flag						: 이벤트성 수요 여부
+		holiday_flag					: 휴일 여부
+	학습용: correction_target
+
+3. final_actual.csv => 최종모델 평가용 정답 역할을 하는 파일.
+	grid_id
+	timestamp
+	final_actual
+	=> ( base_target + correction_target ) => 진짜 실측 정답이라기보다는 "성능 검증용 참조값"
+
+4. grid_place_mapping.csv => 서울 실시간 API의 장소 단위 데이터를 grid 단위 데이터로 연결하기 위한 매핑테이블
+	place_id
+	place_code
+	place_name
+	grid_id
+	weight
+
+---------------------------------------------------------------------------------------------------------------------
+
+<장소-grid 매핑 방법>
+
+실시간 API는 서울 주요 장소 단위 => grid와 연결 필요.
+
+방식1) 추천 기반 초안
+suggest_seoul_place_mapping.py	: base_infer.csv의 높은 점수 grid를 공식 장소 목록에 순서대로 붙여서 매핑.
+apply_suggested_mapping.py	: 위 초안을 grid_place_mapping.csv에 반영.
+						  review_status=SUGGESTED로 표시 => 사람 검토가 필요한 매칭.
+
+방식2) 공간조인 기반
+build_spatial_grid_place_mapping.py	:
+							base_infer.csv의 grid 좌표를 CRS 변환
+							서울 121개 장소 polygon 안에 들어가는 grid 탐색
+							해당 장소 안의 여러 grid에 대해 avg_flow 비율로 weight 부여
+							결과는 grid_place_mapping_spatial.csv 로 저장
+							※ weight 의미	: 장소의 실시간 신호를 grid들에 분배하는 역할
+
+-------------------------------------------------------------------------------------------------------------------------
+
+<실행했을 때 출력되는 결과> => outputs 폴더에 저장
+
+base_mlp_best.pt		: 기본 적합도 모델의 학습된 가중치 파일
+
+correction_lstm_best.pt	: 실시간 보정 모델의 학습된 가중치 파일
+
+base_valid_predictions.csv	: 검증셋에 대해 Base 모델이 예측한 값
+					  보통 grid_id, 실제값(y_true), 예측값(pred_base) 정도를 담음
+
+correction_valid_predictions.csv	: 검증셋에 대해 Correction 모델이 예측한 값
+						  보통 grid_id, timestamp, 실제값, 예측값(pred_correction)이 들어감
+
+final_scores.csv				: 가장 중요한 최종 산출물
+							timestamp
+							grid_id
+							base_score
+							correction_score
+							final_score
+
+scenario_summary.csv			: 최종 점수들의 요약 통계와 시간대별 요약
+							base_score, correction_score, final_score 의 count/mean/std/min/max
+							시간대별 final_score 평균, 최대, 최소
+
+metrics_summary.json			: 모델 성능 요약
+							Base 모델 성능
+							Correction 모델 성능
+							있으면 Final score 성능
+							산출된 파일 경로
+						※ 평가 지표: RMSE, MAE, R², Spearman, 최종 평가 시 Precision@K까지 포함
+
+final_score_heatmap.png		: 좌표가 있으면 최종 시점의 grid 점수를 색으로 뿌린 히트맵 비슷한 산점도 
+						  (점수가 높을수록 더 뜨거운 색으로 표시)
+
+---------------------------------------------------------------------------------------------------------------------------
+
+<출력 결과 의미> => final_scores.csv를 해석하는 법
+
+base_score		: 이 grid의 평상시 기본 체력
+				유동인구가 많고
+				카드 소비가 많고
+				시간대 집중도가 좋고
+				교통 접근성이 좋으면
+			  높게 나옵니다.
+		=> 장기적으로 봤을 때 괜찮은 상권인지를 나타냅니다.
+
+correction_score	: 이 grid의 현재 시점 보정값입니다.
+				지금 사람이 갑자기 몰렸는지
+				교통 혼잡이 커졌는지
+				이벤트가 있는지
+				날씨가 악화됐는지
+			  같은 요소를 반영합니다.
+		=> 평소보다 지금 더 좋은지 나쁜지를 보여줍니다.
+
+final_score		: 실제로 의사결정에 쓰는 최종 점수입니다.
+				base_score가 높고 correction_score도 높으면
+					원래 좋은 상권인데 지금도 분위기가 좋다는 뜻
+				base_score는 낮은데 correction_score가 높으면
+					평소엔 약하지만 특정 시점에 반짝 뜨는 곳일 수 있음
+				base_score는 높은데 correction_score가 낮으면
+					원래는 좋은데 현재 상황이 안 좋은 것일 수 있음
+		=> “장기 잠재력 + 현재 상황”을 합친 점수라고 보면 됩니다.
+
+------------------------------------------------------------------------------------------------------------------
+
+<본 프로젝트 요약>
+
+과거 서울 상권 데이터를 이용해 grid별 기본 활력도를 학습하고, 
+서울시 실시간 도시데이터를 장소→grid 매핑을 통해 보정 신호로 변환한 뒤, 
+시점별 최종 상권 적합도 점수를 출력하는 딥러닝 파이프라인
+
+
+
+

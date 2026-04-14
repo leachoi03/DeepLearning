@@ -829,7 +829,9 @@ def main() -> None:
     corr_valid_df.to_csv(os.path.join(config.output_dir, "correction_valid_predictions.csv"), index=False)
 
     base_score_df = predict_base_scores(config, base_model, base_scaler)
+    base_score_df.to_csv(os.path.join(config.output_dir, "base_scores.csv"), index=False)
     correction_score_df = predict_correction_scores(config, correction_model, corr_scaler)
+    correction_score_df.to_csv(os.path.join(config.output_dir, "correction_scores.csv"), index=False)
 
     final_score_df = combine_scores(base_score_df, correction_score_df, config)
     final_score_path = os.path.join(config.output_dir, "final_scores.csv")
@@ -864,6 +866,8 @@ def main() -> None:
     print(f"- {os.path.join(config.output_dir, 'correction_lstm_best.pt')}")
     print(f"- {os.path.join(config.output_dir, 'base_valid_predictions.csv')}")
     print(f"- {os.path.join(config.output_dir, 'correction_valid_predictions.csv')}")
+    print(f"- {os.path.join(config.output_dir, 'base_scores.csv')}")
+    print(f"- {os.path.join(config.output_dir, 'correction_scores.csv')}")
     print(f"- {final_score_path}")
     print(f"- {os.path.join(config.output_dir, 'scenario_summary.csv')}")
     print(f"- {os.path.join(config.output_dir, 'metrics_summary.json')}")
