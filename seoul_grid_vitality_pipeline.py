@@ -1,5 +1,5 @@
 ﻿"""
-Seoul grid vitality pipeline based on the team proposal.
+Coverage-aware grid vitality pipeline based on the team proposal.
 
 This script implements:
 1. Base suitability model with an MLP on historical grid-level features.
@@ -145,6 +145,11 @@ class Config:
 
     data_dir: str = os.environ.get("SEOUL_GRID_DATA_DIR", "./data")
     output_dir: str = os.environ.get("SEOUL_GRID_OUTPUT_DIR", "./outputs")
+    analysis_scope_label: str = os.environ.get(
+        "SEOUL_GRID_ANALYSIS_SCOPE",
+        "Current covered-area analysis (not full Seoul coverage)",
+    )
+    analysis_scope_mode: str = os.environ.get("SEOUL_GRID_SCOPE_MODE", "covered_area")
 
     base_train_csv: str = os.environ.get("SEOUL_GRID_BASE_TRAIN_CSV", "./data/base_train.csv")
     base_infer_csv: str = os.environ.get("SEOUL_GRID_BASE_INFER_CSV", "./data/base_infer.csv")
@@ -786,7 +791,7 @@ def save_heatmap_like_plot(pred_final_df: pd.DataFrame, config: Config) -> Optio
         s=18,
         alpha=0.85,
     )
-    ax.set_title(f"Seoul Grid Final Score Heatmap Snapshot ({pd.Timestamp(latest_ts)})")
+    ax.set_title(f"{config.analysis_scope_label}\nFinal Score Snapshot ({pd.Timestamp(latest_ts)})")
     ax.set_xlabel(x_name)
     ax.set_ylabel(y_name)
     fig.colorbar(scatter, ax=ax, label="final_score")
@@ -843,6 +848,10 @@ def main() -> None:
     heatmap_path = save_heatmap_like_plot(final_score_df, config)
 
     summary: Dict[str, object] = {
+        "analysis_scope": {
+            "label": config.analysis_scope_label,
+            "mode": config.analysis_scope_mode,
+        },
         "base_metrics": base_metrics,
         "correction_metrics": corr_metrics,
         "artifacts": {

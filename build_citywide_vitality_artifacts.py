@@ -1,5 +1,5 @@
 """
-Build whole-Seoul vitality artifacts from live pipeline outputs.
+Build covered-area vitality artifacts from live pipeline outputs.
 
 This version uses a more realistic propagation strategy:
 1. Keep correction scores for grids directly covered by the live spatial join.
@@ -55,6 +55,10 @@ KT_HOURLY_CSV = os.environ.get(
 OUTPUT_DIR = os.environ.get(
     "SEOUL_GRID_CITYWIDE_OUTPUT_DIR",
     "./outputs/citywide_vitality",
+)
+ANALYSIS_SCOPE_LABEL = os.environ.get(
+    "SEOUL_GRID_ANALYSIS_SCOPE",
+    "Current covered-area analysis (not full Seoul coverage)",
 )
 GRID_SOURCE_CRS = os.environ.get("SEOUL_GRID_SOURCE_CRS", "EPSG:5186")
 TARGET_CRS = "EPSG:4326"
@@ -310,6 +314,10 @@ def render_geographic_heatmap(
     place_profiles: pd.DataFrame,
     gu_profiles: gpd.GeoDataFrame,
     output_path: str,
+    *,
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] | None = None,
+    title: str | None = None,
 ) -> None:
     fig, ax = plt.subplots(figsize=(15, 12))
     cell_half = 25.0
@@ -335,11 +343,16 @@ def render_geographic_heatmap(
         legend=True,
         legend_kwds={"label": "Vitality score", "shrink": 0.78},
     )
-    ax.set_title("Seoul Citywide Grid Vitality")
+    ax.set_title(title or f"{ANALYSIS_SCOPE_LABEL}\nGrid Vitality Heatmap")
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     ax.set_aspect("equal")
     ax.grid(color="#c8d1da", alpha=0.15, linewidth=0.4)
+
+    if xlim is not None:
+        ax.set_xlim(*xlim)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
 
     label_df = place_profiles.sort_values(["live_grid_count", "place_correction"], ascending=False).head(LABEL_TOP_PLACES)
     for row in label_df.itertuples(index=False):
@@ -496,8 +509,42 @@ def main() -> None:
     citywide_csv = os.path.join(OUTPUT_DIR, "citywide_final_scores.csv")
     citywide_df.to_csv(citywide_csv, index=False)
 
-    heatmap_path = os.path.join(OUTPUT_DIR, "citywide_vitality_heatmap.png")
-    render_geographic_heatmap(citywide_df, place_profiles, gu_profiles, heatmap_path)
+    full_heatmap_path = os.path.join(OUTPUT_DIR, "citywide_vitality_heatmap_full_seoul.png")
+    render_geographic_heatmap(
+        citywide_df,
+        place_profiles,
+        gu_profiles,
+        full_heatmap_path,
+        title="Seoul-wide context view\nCurrent covered-area vitality analysis",
+    )
+
+    lon_min = float(citywide_df["lon_wgs84"].min())
+    lon_max = float(citywide_df["lon_wgs84"].max())
+    lat_min = float(citywide_df["lat_wgs84"].min())
+    lat_max = float(citywide_df["lat_wgs84"].max())
+    lon_pad = max((lon_max - lon_min) * 0.08, 0.01)
+    lat_pad = max((lat_max - lat_min) * 0.08, 0.01)
+    detail_heatmap_path = os.path.join(OUTPUT_DIR, "citywide_vitality_heatmap_covered_area_detail.png")
+    render_geographic_heatmap(
+        citywide_df,
+        place_profiles,
+        gu_profiles,
+        detail_heatmap_path,
+        xlim=(lon_min - lon_pad, lon_max + lon_pad),
+        ylim=(lat_min - lat_pad, lat_max + lat_pad),
+        title="Covered-area detail view\nCurrent grid dataset footprint",
+    )
+
+    legacy_heatmap_path = os.path.join(OUTPUT_DIR, "citywide_vitality_heatmap.png")
+    render_geographic_heatmap(
+        citywide_df,
+        place_profiles,
+        gu_profiles,
+        legacy_heatmap_path,
+        title="Covered-area detail view\nCurrent grid dataset footprint",
+        xlim=(lon_min - lon_pad, lon_max + lon_pad),
+        ylim=(lat_min - lat_pad, lat_max + lat_pad),
+    )
 
     summary = (
         citywide_df.groupby("score_source")
@@ -509,9 +556,24 @@ def main() -> None:
     summary.to_csv(os.path.join(OUTPUT_DIR, "citywide_score_source_summary.csv"), index=False)
     place_profiles.to_csv(os.path.join(OUTPUT_DIR, "citywide_place_profiles.csv"), index=False)
     gu_profiles.to_csv(os.path.join(OUTPUT_DIR, "citywide_gu_profiles.csv"), index=False)
+    pd.DataFrame(
+        [
+            {
+                "analysis_scope_label": ANALYSIS_SCOPE_LABEL,
+                "analysis_scope_mode": "covered_area",
+                "base_grid_count": int(len(base_df)),
+                "live_grid_count": int(len(live_df)),
+                "district_boundary_source": os.path.basename(SEOUL_GU_BOUNDARY_GEOJSON),
+                "full_seoul_coverage": False,
+                "full_heatmap_png": os.path.basename(full_heatmap_path),
+                "detail_heatmap_png": os.path.basename(detail_heatmap_path),
+            }
+        ]
+    ).to_csv(os.path.join(OUTPUT_DIR, "analysis_scope_manifest.csv"), index=False)
 
     print(f"Saved citywide scores -> {citywide_csv}")
-    print(f"Saved citywide heatmap -> {heatmap_path}")
+    print(f"Saved full heatmap -> {full_heatmap_path}")
+    print(f"Saved detail heatmap -> {detail_heatmap_path}")
     print(summary.to_string(index=False))
 
 

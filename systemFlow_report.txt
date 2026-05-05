@@ -1,0 +1,576 @@
+『서울시 50m grid 단위 상권 활력도 예측』
+(과거 데이터 기반 기본 적합도+실시간 도시데이터 기반 보정값= 최종 grid별 상권 적합도 점수)
+1. Main Pipeline: seoul_grid_vitality_pipeline.py
+   Main outputs: outputs/final_scores.csv (timestamp, grid_id, base_score, correction_score, final_score)
+
+2. System Flow: 전처리된 CSV를 입력으로 받아, 딥러닝 모델을 학습하고, 최종 상권 점수를 만들어내는 단계
+		원천 데이터
+   			↓
+	preprocess_seoul_grid_data.py
+   			↓
+	data/base_train.csv
+	data/base_infer.csv
+	data/correction_train.csv
+	data/correction_infer.csv
+	data/final_actual.csv
+   			↓
+	seoul_grid_vitality_pipeline.py
+   			↓
+	outputs/base_mlp_best.pt
+	outputs/correction_lstm_best.pt
+	outputs/base_scores.csv
+	outputs/correction_scores.csv
+	outputs/final_scores.csv
+	outputs/scenario_summary.csv
+	outputs/metrics_summary.json
+	outputs/final_score_heatmap.png
+
+3-1. base_score: 해당 grid의 평상시 상권 체력.
+base_features = (
+	vg_flow				평균 유동인구
+	weekday_weekend_gap		평일과 주말 유동 차이
+	hourly_concentration		특정 시간대에 사람이 몰리는 정도
+	card_sales_amount		카드 매출 금액
+	card_sales_count			카드 결제 건수
+	rainfall_mean			평균 강우량
+	rainfall_impact			비가 유동/소비에 주는 영향
+	bus_subway_access		대중교통 접근성
+	rent_level				임대료 또는 상권 강도 대리 지표
+			)
+	이 변수값들을 MLP 모델에 넣어서 grid별 기본 적합도 예측.
+
+3-2. correction_score: 해당 grid의 현재 시점 보정값.
+correction_features = (
+	real_time_population		현재 시점 인구 규모
+	real_time_population_growth	직전 대비 인구 증가율
+	traffic_congestion			교통 혼잡도
+	transit_change			대중교통 이동 변화
+	real_time_temp			현재 기온
+	real_time_rain			현재 강우량
+	event_flag				행사 여부
+	holiday_flag			휴일 여부
+				)
+	이 변수값들은 시간 순서가 있는 시계열 데이터이기 때문에, LSTM 모델을 사용.
+	(일정 길이의 시계열 흐름을 보고 현재 보정값을 예측.)
+
+4. final_score = alpha * base_score + beta * correction_score	(alpha=1.0, beta=1.0)
+	 
+	base_score 높고 correction_score 높음	원래도 좋은 상권이고 지금도 좋은 상태
+	base_score 높고 correction_score 낮음	원래는 좋은 상권인데 현재 상황이 안 좋음
+	base_score 낮고 correction_score 높음	평소엔 약하지만 지금 일시적으로 뜨는 곳
+	둘 다 낮음						장기적·실시간 모두 추천도가 낮은 곳
+
+5-1. 환경 설정 부분: WIndows 환경에서 발생할 수 있는 오류를 줄이기 위한 설정.
+(임시 폴더 접근 문제를 방지하기 위해, 프로젝트 폴더 안에 tmp/폴더를 만들어 임시 파일 위치로 지정)
+ 	os.environ.pop("SSLKEYLOGFILE", None)
+	_TMP_DIR = os.path.join(os.getcwd(), "tmp")
+	os.makedirs(_TMP_DIR, exist_ok=True)
+	os.environ["TMP"] = _TMP_DIR
+	os.environ["TEMP"] = _TMP_DIR
+	os.environ["TMPDIR"] = _TMP_DIR
+	os.environ["MPLCONFIGDIR"] = os.path.join(_TMP_DIR, "mplconfig")
+
+5-2. 재현성 고정 함수: 랜덤 시드 고정, 학습할 때마다 비슷한 결과가 나오도록 고정.
+	def seed_everything(seed: int = 42) -> None:
+
+	random.seed(seed)
+	np.random.seed(seed)
+	torch.manual_seed(seed)
+	torch.cuda.manual_seed_all(seed)
+
+5-3. 평가 지표 함수들: 
+	rmse()
+	precision_at_k()
+	regression_metrics()
+
+	Precision@K: 예측 상위 K개 grid와 실제 상위 K개 grid가 얼마나 겹치는지 확인.
+		precision_at_k(pred_scores, true_scores, ids, k=100)
+
+6. Config 클래스
+	@dataclass
+	class Config:
+
+6-1. 데이터 경로
+	base_train.csv			Base MLP 학습용 데이터
+	base_infer.csv			Base Score 예측용 데이터
+	correction_train.csv		Correction LSTM 학습용 데이터
+	correction_infer.csv		Correction Score 예측용 데이터
+	final_actual.csv			최종 평가용 정답 데이터
+	grid_place_mapping.csv	실시간 장소 데이터를 grid로 연결하기 위한 매핑 파일
+
+6-2. 모델 하이퍼파라미터
+	seq_len = 4			LSTM이 한 번에 보는 시점 수
+	batch_size = 256		한 번에 학습하는 데이터 묶음 크기
+	epochs = 100		최대 학습 반복 횟수
+	lr = 1e-3			학습률
+	weight_decay = 1e-4	과적합 방지용 정규화
+	patience = 12		검증 성능이 12번 연속 개선되지 않으면 조기 종료
+
+6-3. Base MLP 구조 설정
+(base_hidden_dims = (128, 64, 32), dropout = 0.2)
+	입력층
+ 		↓
+	Linear(입력 → 128)
+	BatchNorm
+	ReLU
+	Dropout
+ 		↓
+	Linear(128 → 64)
+	BatchNorm
+	ReLU
+	Dropout
+ 		↓
+	Linear(64 → 32)
+	BatchNorm
+	ReLU
+	Dropout
+ 		↓
+	Linear(32 → 1)
+	출력: base_score
+=> grid의 정적 특징 9개를 받아서 하나의 점수로 예측
+
+6-4. Correction LSTM 구조 설정
+(correction_hidden_dim = 64, correction_num_layers = 2, dropout = 0.2)
+	입력: 최근 4개 시점의 실시간 feature
+		 ↓
+	LSTM 2층
+ 		↓
+	마지막 시점의 hidden state 사용
+ 		↓
+	Linear
+	ReLU
+	Dropout
+	Linear
+ 		↓
+	출력: correction_score
+=> 시간 흐름을 반영해서 현재 보정값을 예측
+
+7. Dataset 클래스 설명
+(PyTorch: 데이터를 Dataset과 DataLoader 형태로 바꿔서 학습)
+7-1. TabularRegressionDataset
+Base MLP용: 
+	class TabularRegressionDataset(Dataset): 
+	입력데이터: 2차원 표 형태 => 샘플 수 × feature 수 => ex. 1000개 grid × 9개 feature
+7-2. SequenceRegressionDataset
+Correction LSTM용: 
+	class SequenceRegressionDataset(Dataset):
+	입력데이터: 3차원 => 샘플 수 × 시퀀스 길이 × feature 수 => ex. 1000개 샘플 × 4개 시점 × 8개 feature
+
+8. BaseMLP 모델 설명: grid별 정적 데이터를 입력받아 base_score을 예측
+class BaseMLP(nn.Module):
+입력 예시: 
+	avg_flow
+	weekday_weekend_gap
+	hourly_concentration
+	card_sales_amount
+	card_sales_count
+	rainfall_mean
+	rainfall_impact
+	bus_subway_access
+	rent_level
+출력: base_score => 이 grid는 평소 기준으로 얼마나 좋은 상권인다?
+
+9. CorrectionLSTM 모델 설명: 시계열 데이터를 입력받아 correction_score을 예측
+입력 예시:
+	t-3 시점: 실시간 인구, 혼잡도, 날씨, 이벤트 여부 ...
+	t-2 시점: 실시간 인구, 혼잡도, 날씨, 이벤트 여부 ...
+	t-1 시점: 실시간 인구, 혼잡도, 날씨, 이벤트 여부 ...
+	t   시점: 실시간 인구, 혼잡도, 날씨, 이벤트 여부 ...
+출력: correction_score => 이 grid는 지금 현재 평소보다 좋아졌는가, 나빠졌는가?
+
+10. EarlyStopping(조기종료): 검증 손실이 일정 횟수 이상 좋아지지 않으면 학습을 멈춤
+class EarlyStopping:
+검증 성능 => patience = 12
+
+11. TorchRegressor: PyTorch 모델 학습 과정을 하나로 묶은 클래스
+class TorchRegressor:
+핵심요소: 
+	self.criterion = nn.HuberLoss()
+	self.optimizer = torch.optim.AdamW(...)
+	self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(...)
+11-1. HuberLoss: MSE와 MAE의 중간 성격을 가진 손실 함수 
+	(이상치에 MSE보다 덜 민감해서, 유동인구나 매출처럼 튀는 값이 있을 수 있는 데이터에 비교적 안정적)
+11-2. AdamW: 딥러닝에 자주 쓰이는 optimizer 
+	(일반 Adam보다 weight decay처리가 더 안정적이라 과적합 방지에 좋음)
+11-3. ReduceLROnPlateau: 검증 손실이 더 이상 줄어들지 않으면, learning rate를 줄임
+	factor=0.5, patience=5 => 검증 성능이 5번 정도 정체되면 학습률을 절반으로 낮춤
+11-4. Gradient Clipping: gradient가 너무 커지는 것을 방지
+	torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+	(LSTM 같은 시계열 모델에서 학습이 불안정해지는 것을 줄이는 데 도움)
+
+12. Base 데이터 생성 과정
+def build_base_data(config: Config): => base_train.csv를 읽고 Base MLP 학습용 데이터로 바꿈
+	base_train.csv 읽기
+ 		↓
+	필요한 feature 없으면 0으로 추가
+ 		↓
+	grid_id, base_target 존재 확인
+ 		↓
+	feature와 target을 float으로 변환
+ 		↓
+	결측치 처리
+ 		↓
+	x, y 분리
+ 		↓
+	train/valid 8:2 분리
+ 		↓
+	StandardScaler로 정규화 (중요!!) 
+ 		↓
+	학습 데이터 반환
+
+13. LSTM sequence 생성 과정
+def build_sequence_samples(...) => LSTM이 사용할 수 있도록 데이터를 시계열 묶음으로 바꿈
+(예를 들어 seq_len = 4이고 특정 grid의 데이터가 다음처럼 있다고 해보겠습니다.
+	t1, t2, t3, t4, t5, t6
+그러면 다음과 같은 학습 샘플이 만들어집니다.
+	[t1, t2, t3, t4] → t4의 correction_target
+	[t2, t3, t4, t5] → t5의 correction_target
+	[t3, t4, t5, t6] → t6의 correction_target
+즉, 최근 4개 시점의 흐름을 보고 마지막 시점의 보정값을 맞히게 합니다.)
+
+14. Correction 데이터 생성 과정
+def build_correction_data(config: Config): => correction_train.csv를 읽고 LSTM 학습용 데이터로 변환
+	correction_train.csv 읽기
+		 ↓
+	필요한 correction feature 없으면 0으로 추가
+ 		↓
+	grid_id, timestamp, correction_target 존재 확인
+ 		↓
+	feature와 target을 float으로 변환
+ 		↓
+	timestamp를 datetime으로 변환
+ 		↓
+	StandardScaler로 correction feature 정규화
+ 		↓
+	grid별 시간순으로 seq_len 길이의 시퀀스 생성
+ 		↓
+	train/valid 8:2 분리
+※ 특정 grid에 시점 데이터가 seq_len보다 적으면 그 grid는 LSTM 입력으로 사용할 수 없다. (예외처리)
+if len(x_seq) == 0:
+    raise ValueError("correction_train.csv does not contain enough rows to build LSTM sequences.")
+=> correction_train.csv에는 최소한 grid벼로 4개 이상의 시점 데이터가 있어여 함
+
+15. 실시간 OpenAPI 관련 함수: 
+서울 실시간 도시데이터 API를 가져오기 위한 함수도 포함
+fetch_seoul_realtime_data()
+normalize_realtime_api_payload()
+map_place_to_grid()
+aggregate_realtime_to_grid()
+maybe_collect_realtime_snapshot()
+=> 보조기능 수준 
+(실제로 장소별 API를 호출해서 correction_infer_live.csv를 만드는 작업은 보통 별도 파일인 fetch_seoul_realtime_api_to_csv.py에서 처리하는 구조가 더 명확)
+	환경변수에 API URL이 있으면
+ 		↓
+	API 호출 시도
+ 		↓
+	응답 JSON 평탄화
+ 		↓
+	실시간 feature 형태로 정리
+ 		↓
+	outputs/realtime_api_snapshot.csv 저장
+=> 최종 LSTM 추론에 바로 연결하려면, 실시간 API 결과가 결국 다음 형식으로 정리되어야 함
+	grid_id
+	timestamp
+	real_time_population
+	real_time_population_growth
+	traffic_congestion
+	transit_change
+	real_time_temp
+	real_time_rain
+	event_flag
+	holiday_flag
+
+16. 모델 학습 함수
+16-1. Base 모델 학습
+def train_base_model(config: Config):
+	build_base_data()로 데이터 준비
+ 		↓
+	DataLoader 생성
+ 		↓
+	BaseMLP 생성
+ 		↓
+	TorchRegressor로 학습
+ 		↓
+	검증 데이터 예측
+		 ↓
+	RMSE, MAE, R², Spearman 계산
+ 		↓
+	base_mlp_best.pt 저장
+=> 반환값:
+	model	학습된 Base MLP
+	scaler		Base feature 정규화에 사용한 StandardScaler
+	metrics	검증 성능
+	valid_df	검증셋 실제값/예측값
+
+16-2. Correction 모델 학습
+def train_correction_model(config: Config):
+	build_correction_data()로 LSTM 시퀀스 데이터 준비
+ 		↓
+	DataLoader 생성
+ 		↓
+	CorrectionLSTM 생성
+ 		↓
+	TorchRegressor로 학습
+ 		↓
+	검증 데이터 예측
+ 		↓
+	RMSE, MAE, R², Spearman 계산
+ 		↓
+	correction_lstm_best.pt 저장
+=> 반환값:
+	model	학습된 Base MLP
+	scaler		Base feature 정규화에 사용한 StandardScaler
+	metrics	검증 성능
+	valid_df	검증셋 실제값/예측값
+
+17. 예측 함수
+17-1. Base Score 예측
+def predict_base_scores(...) => base_infer.csv를 읽어서 grid별 base_score을 예측
+	base_infer.csv 읽기
+ 		↓
+	feature 보정 및 결측치 처리
+ 		↓
+	학습 때 사용한 scaler로 정규화
+ 		↓
+	Base MLP로 예측
+ 		↓
+	grid_id, 좌표, base_score 반환
+(좌표 칼럼이 있으면 같이 유지.  ex) lon, lat, x, y, coord_x, coord_y 칼럼이 있으면 보존 => 히트맵 그릴 때 사용)
+
+17-2. Correction Score 예측
+def predict_correction_scores(...) => correction_infer.csv를 읽어서 grid별·시간별 correction_score를 예측
+	correction_infer.csv 읽기
+ 		↓
+	timestamp 변환
+ 		↓
+	feature 정규화
+ 		↓
+	seq_len 길이의 LSTM 입력 시퀀스 생성
+ 		↓
+	Correction LSTM으로 예측
+ 		↓
+	grid_id, timestamp, correction_score 반환
+※ correction_infer.csv도 LSTM 입력이므로 grid별로 최소 seq_len개 이상의 시점이 있어야 함
+(현재 기본값: seq_len=4)
+=> 특정 grid에 추론용 데이터가 1개 시점만 있으면 LSTM 예측이 불가능
+
+18. 최종 점수 결합 함수
+def combine_scores(base_score_df, correction_score_df, config): => Base Score + Correction Score
+merged = correction_score_df.merge(base_score_df, on=config.grid_id_col, how="left") 
+=> grid_id 기준으로 두 결과를 합침 => 그리고 다음 아래 계산 수행
+merged["final_score"] = config.alpha * merged["base_score"] + config.beta * merged["correction_score"]
+최종 반환 칼럼 순서:
+	timestamp
+	grid_id
+	base_score
+	correction_score
+	final_score
+
+19. 최종 평가 함수
+def evaluate_final_scores(pred_final_df, actual_df, config): 
+=> 예측한 final_score와 실제 또는 참조값인 final_actual을 비교 (final_actual.csv가 있을 때만 실행)
+평가 지표:
+	RMSE
+	MAE
+	R²
+	Spearman
+	Precision@K
+※ 현재 프로젝트에서 final_actual은 실제 상권 정답이라기보다, 
+전처리 단계에서 만든 검증용 참조값 또는 pseudo-label 성격이 강함
+따라서 성능 수치를 해석할 때는, "이 모델이 현실의 진짜 상권 성과를 완벽히 맞췄다"가 아니라,
+"우리가 정의한 기준 점수와 모델 예측이 얼마나 일치하는지 확인했다"로 보는 것이 더 정확
+
+20. 시나리오 요약 함수
+def scenario_check(pred_final_df, config): => 최종 점수 결과 요약
+outputs/scenario_summary.csv 생성
+	base_score 요약 통계
+	correction_score 요약 통계
+	final_score 요약 통계
+	시간대별 final_score 평균
+	시간대별 final_score 최대
+	시간대별 final_score 최소
+(발표나 보고서에서 결과 해석할 때 유용)
+ex.) 특정 시간대에 final_score 평균이 증가 => 실시간 인구 또는 이벤트성 보정값이 반영된 결과로 볼 수 있음
+
+21. 히트맵 생성 함수
+def save_heatmap_like_plot(pred_final_df, config): => 좌표 컬럼이 있을 때 final_score_heatmap.png를 생성
+지원하는 좌표 칼럼 이름:
+	lon, lng, longitude
+	lat, latitude
+	x, coord_x, utm_x
+	y, coord_y, utm_y
+좌표가 있으면 가장 최신 timestamp만 골라서 산점도를 그림:
+	latest_ts = plot_df[config.time_col].max()
+	latest_df = plot_df[plot_df[config.time_col] == latest_ts]
+=>이 히트맵은 전체 시간대 평균이 아니라, "가장 최신 시점의 grid별 final_score snapshot"
+(현재 사용자가 겪은 “종로구 쪽만 히트맵이 나온다”는 문제는 이 코드 자체의 오류라기보다, 
+입력 데이터인 base_infer.csv 또는 grid 좌표 데이터가 특정 지역에만 존재하기 때문일 가능성이 큼)
+=> 모델은 입력된 grid만 예측하고 시각화
+(입력 grid가 종로구 중심이면 → 출력 히트맵도 종로구 중심으로 나옴)
+※ 서울 전역 결과를 얻으려면 base_infer.csv에 서울 전역 grid가 들어 있어야 합니다
+
+22. main()실행 흐름
+def main() -> None:
+실행순서:
+	1. Config 생성
+	2. seed 고정
+	3. outputs 폴더 생성
+	4. 설정값 출력
+	5. 실시간 API snapshot 수집 시도
+	6. Base MLP 학습
+	7. base_valid_predictions.csv 저장
+	8. Correction LSTM 학습
+	9. correction_valid_predictions.csv 저장
+	10. base_score 예측
+	11. base_scores.csv 저장
+	12. correction_score 예측
+	13. correction_scores.csv 저장
+	14. final_score 계산
+	15. final_scores.csv 저장
+	16. scenario_summary.csv 저장
+	17. heatmap 생성
+	18. final_actual.csv가 있으면 최종 평가
+	19. metrics_summary.json 저장
+	20. 저장된 파일 목록 출력
+=> 터미널에서 python seoul_grid_vitality_pipeline.py 하나만 실행하면 전체 파이프라인이 돌아감
+
+23. 입력 파일별 필요한 칼럼:
+23-1. base_train.csv => 학습용이므로 base_target이 필요
+	grid_id
+	avg_flow
+	weekday_weekend_gap
+	hourly_concentration
+	card_sales_amount
+	card_sales_count
+	rainfall_mean
+	rainfall_impact
+	bus_subway_access
+	rent_level
+	base_target
+
+23-2. base_infer.csv => 추론용이므로 base_target은 없어도 됨
+	grid_id
+	avg_flow
+	weekday_weekend_gap
+	hourly_concentration
+	card_sales_amount
+	card_sales_count
+	rainfall_mean
+	rainfall_impact
+	bus_subway_access
+	rent_level
+	lon
+	lat
+(lon, lat는 필수는 아니지만, 히트맵을 만들려면 필요)
+
+23-3. correction_train.csv => LSTM 학습용이므로 correction_target이 필요
+	grid_id
+	timestamp
+	real_time_population
+	real_time_population_growth
+	traffic_congestion
+	transit_change
+	real_time_temp
+	real_time_rain
+	event_flag
+	holiday_flag
+	correction_target
+
+23-4. correction_infer.csv => 추론용이므로 correction_target은 없어도 됨
+	grid_id
+	timestamp
+	real_time_population
+	real_time_population_growth
+	traffic_congestion
+	transit_change
+	real_time_temp
+	real_time_rain
+	event_flag
+	holiday_flag
+(단, grid별로 최소 4개 시점 이상 있어야 함)
+
+23-5. final_actual.csv => 선택 파일
+(있으면 최종 평가까지 하고, 없으면 평가를 건너뜀)
+	grid_id
+	timestamp
+	final_actual
+
+24. 출력 파일 의미:
+	base_mlp_best.pt				Base MLP의 최고 성능 가중치
+	correction_lstm_best.pt			Correction LSTM의 최고 성능 가중치
+	base_valid_predictions.csv		Base 모델 검증셋 예측 결과
+	correction_valid_predictions.csv	Correction 모델 검증셋 예측 결과
+	base_scores.csv				추론용 grid별 기본 점수
+	correction_scores.csv			추론용 grid별·시간별 보정 점수
+	final_scores.csv				최종 상권 적합도 점수
+	scenario_summary.csv			점수 요약 통계
+	metrics_summary.json			모델 성능 요약
+	final_score_heatmap.png		최종 시점 점수 시각화
+
+25. 이 코드의 장점:
+	1. Base 모델과 Correction 모델이 분리:
+		장기 상권 체력과 실시간 변화를 구분해서 설명할 수 있음
+	2. 딥러닝 모델을 실제로 사용:
+		Base는 MLP
+		Correction은 LSTM
+	3. 평가 지표가 다양:
+		RMSE, MAE, R²
+		Spearman
+		Precision@K
+	4. 결과물이 명확:
+		최종 CSV
+		성능 JSON
+		히트맵 PNG
+	5. 실시간 API 확장 구조:
+		서울 실시간 도시데이터를 나중에 연결할 수 있음
+
+26. 이 코드의 한계와 주의점:
+26-1. 서울 전역을 자동으로 예측하지는 않음
+	이 코드는 입력 CSV에 들어 있는 grid만 예측
+	따라서, base_infer.csv가 종로구 주변 grid만 가지고 있으면, 결과도 종로구 주변만 나옴
+	서울 전역 결과를 원하면 다음이 필요
+		서울 전역 grid_id
+		서울 전역 grid 좌표
+		서울 전역 grid별 base feature
+		서울 전역 grid별 correction feature
+
+26-2. 실시간 데이터는 122개 주요 장소 단위
+	(서울 실시간 도시데이터 OpenAPI는 전 grid가 아니라 "주요 장소 단위")
+	따라서 실시간 데이터를 grid에 적용하려면 다음 과정이 필요
+		실시간 장소 데이터
+ 				↓
+		place_id 또는 place_code 기준 정리
+ 				↓
+		grid_place_mapping.csv로 grid 연결
+ 				↓
+		장소 단위 값을 grid 단위로 분배
+ 				↓
+		correction_infer.csv 형식으로 변환
+	=> 실시간 API만 연결한다고 바로 서울 전역 grid 예측이 되는 것은 아님
+
+26-3. correction_infer.csv는 시계열 길이가 필요:
+	LSTM은 seq_len = 4이므로 grid별로 최소 4개 시점이 필요
+	실시간 API에서 현재 시점 데이터 1개만 가져오면 바로 LSTM에 넣을 수 없음
+	그래서, 실제 라이브 추론을 하려면 다음 방식이 필요:
+	=> 과거 correction_infer 데이터 3개 시점 + 현재 실시간 API 데이터 1개 시점 = 총 4개 시점
+	     이렇게 만들어야 LSTM 추론이 가능
+
+26-4. final_actual은 실제 정답이 아닐 수 있음:
+	=> 본 프로젝트의 평가는 실제 상권 성공 여부에 대한 완전한 정답 검증이라기보다, 
+		정의한 적합도 기준에 대해 모델이 얼마나 일관되게 예측하는지 확인하는 방식이다.
+
+27. 발표용으로 설명:
+이 코드는 서울시 50m grid 단위 상권 활력도 예측 파이프라인입니다.
+  먼저 과거 유동인구, 카드 소비, 강우량, 교통 접근성 등의 정적 feature를 이용해 MLP 기반 Base 모델을 학습하고, 
+각 grid의 장기적 상권 적합도인 base_score를 산출합니다.
+  이후 실시간 인구, 인구 증가율, 교통 혼잡도, 기온, 강우, 이벤트 여부 등의 시계열 feature를 LSTM 모델에 입력하여 
+현재 시점의 보정값인 correction_score를 예측합니다.
+  마지막으로 final_score = base_score + correction_score 방식으로 최종 상권 적합도 점수를 계산하고, 
+이를 CSV와 히트맵 이미지로 저장합니다.
+즉, 이 코드는 과거 데이터가 말해주는 평상시 상권 잠재력과 실시간 데이터가 말해주는 현재 상황을 결합해 
+grid별 최종 추천 점수를 만드는 역할을 합니다.
+
+28. 한 줄 요약:
+이 코드는 서울시 grid별 상권의 “평상시 기본 점수”를 MLP로 예측하고, 
+“현재 실시간 변화량”을 LSTM으로 보정한 뒤, 
+최종 상권 적합도 점수와 히트맵을 생성하는 메인 딥러닝 파이프라인입니다.

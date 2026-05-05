@@ -1,0 +1,2 @@
+analysis_scope_label,analysis_scope_mode,base_grid_count,live_grid_count,district_boundary_source,full_seoul_coverage,full_heatmap_png,detail_heatmap_png
+Current covered-area analysis (not full Seoul coverage),covered_area,337,20,seoul_municipalities_geo.json,False,citywide_vitality_heatmap_full_seoul.png,citywide_vitality_heatmap_covered_area_detail.png
