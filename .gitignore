@@ -1,0 +1,14 @@
+api_usage_manifest.json
+outputs_colab/
+outputs_colab_live/
+tmp_verify_pipeline/
+tmp/
+__pycache__/
+*.pyc
+
+# Live API runtime artifacts
+data/correction_infer_live_spatial_api.csv
+data/correction_infer_live_spatial_sequence_api.csv
+
+# Notebook runtime clutter
+.ipynb_checkpoints/

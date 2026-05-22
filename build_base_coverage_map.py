@@ -14,7 +14,7 @@ from pyproj import Transformer
 from shapely.geometry import box
 
 
-plt.rcParams["font.family"] = "Malgun Gothic"
+plt.rcParams["font.family"] = "DejaVu Sans"
 plt.rcParams["axes.unicode_minus"] = False
 
 BASE_INFER_CSV = os.environ.get(
@@ -73,10 +73,11 @@ def main() -> None:
 
     label_points = gu_gdf.geometry.representative_point()
     for row, pt in zip(gu_gdf.itertuples(index=False), label_points):
+        gu_label = getattr(row, "gu_name_eng", None) or getattr(row, "gu_name", "")
         ax.text(
             pt.x,
             pt.y,
-            row.gu_name,
+            gu_label,
             fontsize=8,
             color="#1d3557",
             ha="center",

@@ -1,0 +1,159 @@
+{
+  "covered_grid_count": 337,
+  "live_grid_count": 20,
+  "place_count": 8,
+  "city_mean": 4.288,
+  "city_std": 1.21,
+  "city_min": 1.324,
+  "city_max": 11.641,
+  "top5": [
+    {
+      "grid_id": "5*0*9*3*",
+      "lon_wgs84": 126.9765,
+      "lat_wgs84": 37.5751,
+      "base_score": 11.5666,
+      "correction_score_citywide": 0.0746,
+      "final_score_citywide": 11.6412,
+      "score_source": "HYBRID_PROPAGATED",
+      "driver_place": "Bukchon Hanok Village"
+    },
+    {
+      "grid_id": "5*5*4*6*",
+      "lon_wgs84": 126.989,
+      "lat_wgs84": 37.5879,
+      "base_score": 7.0626,
+      "correction_score_citywide": 0.0759,
+      "final_score_citywide": 7.1385,
+      "score_source": "HYBRID_PROPAGATED",
+      "driver_place": "Bukchon Hanok Village"
+    },
+    {
+      "grid_id": "5*1*6*9*",
+      "lon_wgs84": 127.0191,
+      "lat_wgs84": 37.5778,
+      "base_score": 6.1394,
+      "correction_score_citywide": 0.0838,
+      "final_score_citywide": 6.2232,
+      "score_source": "PLACE_PROPAGATED",
+      "driver_place": "Changdeokgung Palace & Jongmyo Shrine"
+    },
+    {
+      "grid_id": "5*5*2*3*",
+      "lon_wgs84": 126.9987,
+      "lat_wgs84": 37.5819,
+      "base_score": 6.119,
+      "correction_score_citywide": 0.0757,
+      "final_score_citywide": 6.1948,
+      "score_source": "HYBRID_PROPAGATED",
+      "driver_place": "Bukchon Hanok Village"
+    },
+    {
+      "grid_id": "5*0*8*6*",
+      "lon_wgs84": 126.9512,
+      "lat_wgs84": 37.5895,
+      "base_score": 6.1187,
+      "correction_score_citywide": 0.0582,
+      "final_score_citywide": 6.1769,
+      "score_source": "HYBRID_PROPAGATED",
+      "driver_place": "Seochon"
+    }
+  ],
+  "source_counts": {
+    "HYBRID_PROPAGATED": 231,
+    "BASE_ONLY": 74,
+    "DIRECT_LIVE": 20,
+    "PLACE_PROPAGATED": 12
+  },
+  "place": [
+    {
+      "place_name": "경복궁",
+      "category": "고궁·문화유산",
+      "place_correction": 0.0744,
+      "place_base_score": 3.3242,
+      "live_grid_count": 6,
+      "place_centroid_lon": 126.9769,
+      "place_centroid_lat": 37.5797
+    },
+    {
+      "place_name": "광화문·덕수궁",
+      "category": "고궁·문화유산",
+      "place_correction": 0.075,
+      "place_base_score": 3.227,
+      "live_grid_count": 3,
+      "place_centroid_lon": 126.9782,
+      "place_centroid_lat": 37.5701
+    },
+    {
+      "place_name": "창덕궁·종묘",
+      "category": "고궁·문화유산",
+      "place_correction": 0.0839,
+      "place_base_score": 3.1643,
+      "live_grid_count": 4,
+      "place_centroid_lon": 126.994,
+      "place_centroid_lat": 37.579
+    },
+    {
+      "place_name": "북촌한옥마을",
+      "category": "발달상권",
+      "place_correction": 0.0786,
+      "place_base_score": 3.8912,
+      "live_grid_count": 5,
+      "place_centroid_lon": 126.9845,
+      "place_centroid_lat": 37.5829
+    },
+    {
+      "place_name": "서촌",
+      "category": "발달상권",
+      "place_correction": 0.0571,
+      "place_base_score": 3.0665,
+      "live_grid_count": 3,
+      "place_centroid_lon": 126.969,
+      "place_centroid_lat": 37.5802
+    },
+    {
+      "place_name": "인사동",
+      "category": "발달상권",
+      "place_correction": 0.0833,
+      "place_base_score": 3.1399,
+      "live_grid_count": 1,
+      "place_centroid_lon": 126.9868,
+      "place_centroid_lat": 37.5738
+    },
+    {
+      "place_name": "익선동",
+      "category": "발달상권",
+      "place_correction": 0.0784,
+      "place_base_score": 2.8005,
+      "live_grid_count": 1,
+      "place_centroid_lon": 126.9897,
+      "place_centroid_lat": 37.5729
+    },
+    {
+      "place_name": "송현녹지광장",
+      "category": "공원",
+      "place_correction": 0.0866,
+      "place_base_score": 3.568,
+      "live_grid_count": 1,
+      "place_centroid_lon": 126.9844,
+      "place_centroid_lat": 37.5778
+    }
+  ],
+  "metrics": {
+    "base_metrics": {
+      "rmse": 9.878880500793457,
+      "mae": 7.621083736419678,
+      "r2": -1.6235854625701904,
+      "spearman": -0.3449249914112303
+    },
+    "correction_metrics": {
+      "rmse": 1.1219979524612427,
+      "mae": 1.0214691162109375,
+      "r2": -4.747868061065674,
+      "spearman": 0.5
+    },
+    "artifacts": {
+      "final_scores_csv": "D:\\subUser\\cgh\\CodexProj\\project\\DL\\outputs\\live_api_spatial_run\\final_scores.csv",
+      "heatmap_png": "D:\\subUser\\cgh\\CodexProj\\project\\DL\\outputs\\live_api_spatial_run\\final_score_heatmap.png"
+    }
+  }
+}

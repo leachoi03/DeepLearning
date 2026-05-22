@@ -1,0 +1,17 @@
+{
+  "workspace": "C:\\Dev\\projects\\DeepLearning\\documents\\generated_analysis_assets",
+  "pptx": "C:\\Dev\\projects\\DeepLearning\\documents\\작성본\\[팀명]_분석결과서.pptx",
+  "checks": {
+    "output_hygiene": {
+      "output_dir": "C:\\Dev\\projects\\DeepLearning\\documents\\generated_analysis_assets\\output",
+      "unexpected_files": [
+        "output directory is missing"
+      ]
+    }
+  },
+  "failures": [
+    "PPTX package inspection failed: unzip -Z1 C:\\Dev\\projects\\DeepLearning\\documents\\작성본\\[팀명]_분석결과서.pptx failed",
+    "output/ contains non-deliverable files: output directory is missing"
+  ],
+  "warnings": []
+}

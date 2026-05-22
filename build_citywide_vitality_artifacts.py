@@ -24,7 +24,7 @@ from pyproj import Transformer
 from shapely import concave_hull
 from shapely.geometry import MultiPoint, Point, box
 
-plt.rcParams["font.family"] = "Malgun Gothic"
+plt.rcParams["font.family"] = "DejaVu Sans"
 plt.rcParams["axes.unicode_minus"] = False
 
 
@@ -368,10 +368,11 @@ def render_geographic_heatmap(
 
     for row in gu_profiles.itertuples(index=False):
         label_point = row.geometry.representative_point()
+        gu_label = getattr(row, "gu_name_eng", None) or getattr(row, "gu_name", "")
         ax.text(
             label_point.x,
             label_point.y,
-            row.gu_name,
+            gu_label,
             fontsize=8,
             color="#0b2545",
             ha="center",

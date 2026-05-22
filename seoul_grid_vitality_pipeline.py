@@ -716,24 +716,60 @@ def combine_scores(base_score_df: pd.DataFrame, correction_score_df: pd.DataFram
     return merged[ordered_cols + other_cols]
 
 
-def evaluate_final_scores(pred_final_df: pd.DataFrame, actual_df: pd.DataFrame, config: Config) -> Dict[str, float]:
+def evaluate_final_scores(pred_final_df: pd.DataFrame, actual_df: pd.DataFrame, config: Config) -> Dict[str, object]:
     actual_df = actual_df.copy()
     require_columns(actual_df, [config.grid_id_col, config.final_actual_col], "final_actual.csv")
 
     merge_cols = [config.grid_id_col]
+    match_mode = "grid_id"
     if config.time_col in pred_final_df.columns and config.time_col in actual_df.columns:
         actual_df[config.time_col] = pd.to_datetime(actual_df[config.time_col])
-        merge_cols.append(config.time_col)
+        pred_ts_df = pred_final_df.copy()
+        pred_ts_df[config.time_col] = pd.to_datetime(pred_ts_df[config.time_col])
+        timestamp_merge_cols = [config.grid_id_col, config.time_col]
+        merged = pred_ts_df.merge(
+            actual_df[timestamp_merge_cols + [config.final_actual_col]],
+            on=timestamp_merge_cols,
+            how="inner",
+        )
+        if not merged.empty:
+            merge_cols = timestamp_merge_cols
+            match_mode = "grid_id_timestamp"
+        else:
+            print(
+                "[WARN] No timestamp overlap between live predictions and final_actual.csv. "
+                "Falling back to grid_id-level final evaluation."
+            )
+            actual_df = (
+                actual_df.groupby(config.grid_id_col, as_index=False)[config.final_actual_col]
+                .mean()
+            )
+            merged = pred_final_df.merge(
+                actual_df[[config.grid_id_col, config.final_actual_col]],
+                on=config.grid_id_col,
+                how="inner",
+            )
+    else:
+        merged = pred_final_df.merge(actual_df[merge_cols + [config.final_actual_col]], on=merge_cols, how="inner")
 
-    merged = pred_final_df.merge(actual_df[merge_cols + [config.final_actual_col]], on=merge_cols, how="inner")
     if merged.empty:
-        raise ValueError("No overlapping rows were found between predictions and final_actual.csv.")
+        print(
+            "[WARN] No overlapping rows were found between live predictions and final_actual.csv. "
+            "Skipping final_actual evaluation for this live API run."
+        )
+        return {
+            "evaluation_match_mode": "skipped_no_overlap",
+            "evaluation_rows": 0,
+            "reason": "No overlapping grid_id/timestamp rows between live predictions and final_actual.csv.",
+        }
 
     y_true = merged[config.final_actual_col].to_numpy()
     y_pred = merged["final_score"].to_numpy()
     ids = merged[config.grid_id_col].to_numpy()
     metrics = regression_metrics(y_true, y_pred)
     metrics[f"precision_at_{config.topk}"] = precision_at_k(y_pred, y_true, ids, k=min(config.topk, len(merged)))
+    metrics["evaluation_match_mode"] = match_mode
+    metrics["evaluation_rows"] = int(len(merged))
     return metrics
 
 

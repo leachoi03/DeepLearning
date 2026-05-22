@@ -57,6 +57,29 @@ def _flatten_records(payload: object) -> List[dict]:
     return []
 
 
+def _mask_secret(text: object, secret: str) -> str:
+    value = str(text)
+    if secret:
+        value = value.replace(secret, "***API_KEY***")
+    return value
+
+
+def _api_result_message(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    result = payload.get("RESULT")
+    if isinstance(result, dict):
+        code = result.get("CODE", "")
+        message = result.get("MESSAGE", "")
+        if code or message:
+            return f"RESULT.CODE={code} RESULT.MESSAGE={message}"
+    return ""
+
+
+def _looks_like_place_code(value: object) -> bool:
+    return isinstance(value, str) and value.strip().upper().startswith("POI")
+
+
 def find_existing_column(df: pd.DataFrame, candidates: Iterable[str]) -> str | None:
     lowered = {str(col).strip().lower(): col for col in df.columns}
     for col in candidates:
@@ -148,7 +171,14 @@ def fetch_one_place(
 ) -> dict:
     session = requests.Session()
     session.trust_env = False
-    if isinstance(place_code, str) and place_code.strip():
+    api_url = api_url.strip()
+    is_seoul_citydata = "openapi.seoul.go.kr:8088" in api_url and (
+        "citydata" in api_url or "citydata" not in api_url
+    )
+    if is_seoul_citydata and isinstance(place_query, str) and place_query.strip():
+        query_value = place_query.strip()
+        query_field = "AREA_NM"
+    elif isinstance(place_code, str) and place_code.strip():
         query_value = place_code.strip()
         query_field = "AREA_CD"
     elif isinstance(place_query, str) and place_query.strip():
@@ -157,7 +187,6 @@ def fetch_one_place(
     else:
         raise ValueError("Either place_code or place_query must be provided.")
 
-    api_url = api_url.strip()
     if "{KEY}" in api_url or "{TYPE}" in api_url or "{QUERY}" in api_url:
         request_url = (
             api_url.replace("{KEY}", api_key)
@@ -180,7 +209,17 @@ def fetch_one_place(
             timeout=30,
         )
     response.raise_for_status()
-    return response.json()
+    try:
+        return response.json()
+    except ValueError as exc:
+        preview = response.text[:500].replace("\n", " ").replace("\r", " ")
+        safe_url = _mask_secret(response.url, api_key)
+        raise ValueError(
+            "Seoul API did not return JSON. "
+            f"status={response.status_code} content_type={response.headers.get('content-type', '')} "
+            f"query_field={query_field} query_value={query_value} url={safe_url} "
+            f"body_preview={preview}"
+        ) from exc
 
 
 def build_live_correction(mapping_path: str, output_path: str) -> None:
@@ -209,28 +248,50 @@ def build_live_correction(mapping_path: str, output_path: str) -> None:
     place_rows = mapping[place_cols].drop_duplicates()
     fetched_frames: List[pd.DataFrame] = []
 
+    failed_queries: List[str] = []
+    empty_queries: List[str] = []
+
     for row in place_rows.itertuples(index=False):
         api_query = getattr(row, "api_query", None) if hasattr(row, "api_query") else None
-        place_query = api_query if isinstance(api_query, str) and api_query.strip() else row.place_code
-        if not isinstance(place_query, str) or not place_query.strip():
+        if isinstance(api_query, str) and api_query.strip() and not _looks_like_place_code(api_query):
+            place_query = api_query
+        else:
             place_query = row.place_name
         if not isinstance(place_query, str) or not place_query.strip():
+            place_query = row.place_code
+        if not isinstance(place_query, str) or not place_query.strip():
             continue
-        payload = fetch_one_place(
-            api_url,
-            api_key,
-            place_query=place_query.strip() if isinstance(place_query, str) else "",
-            place_code=row.place_code if isinstance(row.place_code, str) else "",
-            response_type=response_type,
-        )
+        query_label = place_query.strip()
+        try:
+            payload = fetch_one_place(
+                api_url,
+                api_key,
+                place_query=query_label,
+                place_code=row.place_code if isinstance(row.place_code, str) else "",
+                response_type=response_type,
+            )
+        except Exception as exc:
+            failed_queries.append(query_label)
+            print(f"[WARN] API fetch failed for {query_label}: {_mask_secret(exc, api_key)}")
+            continue
         normalized = normalize_realtime_payload(payload)
         if normalized.empty:
+            empty_queries.append(query_label)
+            api_message = _api_result_message(payload)
+            if api_message:
+                print(f"[WARN] API returned no citydata rows for {query_label}: {api_message}")
+            else:
+                print(f"[WARN] API returned no citydata rows for {query_label}.")
             continue
         normalized["place_id"] = row.place_id
         fetched_frames.append(normalized)
 
     if not fetched_frames:
-        raise ValueError("No live rows were fetched. Fill place_code/place_name in grid_place_mapping.csv first.")
+        raise ValueError(
+            "No live rows were fetched. "
+            f"failed_queries={failed_queries[:10]} empty_queries={empty_queries[:10]}. "
+            "Check the Seoul API key, endpoint, quota, and place_code/place_name mapping."
+        )
 
     realtime = pd.concat(fetched_frames, ignore_index=True)
     merged = mapping.merge(realtime, on="place_id", how="inner")
@@ -260,6 +321,9 @@ def build_live_correction(mapping_path: str, output_path: str) -> None:
     out.to_csv(output_path, index=False)
     print(f"Saved live correction rows -> {output_path}")
     print(f"rows: {len(out)}")
+    print(f"successful places: {len(fetched_frames)}")
+    print(f"failed places: {len(failed_queries)}")
+    print(f"empty places: {len(empty_queries)}")
 
 
 def main() -> None:
